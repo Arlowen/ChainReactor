@@ -5,12 +5,15 @@ import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.PropertyKey
 
 @NonNls
-private const val BUNDLE = "messages.MyBundle"
+private const val BUNDLE = "messages.ChainReactorBundle"
 
-object MyBundle : DynamicBundle(BUNDLE) {
+/**
+ * 国际化资源包
+ */
+object ChainReactorBundle : DynamicBundle(BUNDLE) {
 
     @JvmStatic
-    fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any) =
+    fun message(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any): String =
         getMessage(key, *params)
 
     @Suppress("unused")
