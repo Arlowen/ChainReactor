@@ -39,5 +39,14 @@
             icon="AllIcons.Actions.Execute">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+
+        <action
+            id="ChainReactor.AddProject"
+            class="com.github.arlowen.chainreactor.actions.AddToChainReactorAction"
+            text="Add to ChainReactor"
+            description="将目录添加到 ChainReactor"
+            icon="AllIcons.General.Add">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

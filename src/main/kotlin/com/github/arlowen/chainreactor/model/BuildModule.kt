@@ -17,8 +17,20 @@ data class BuildModule(
     val workingDir: String,
 
     /** 执行顺序 */
-    var order: Int = 0
+    var order: Int = 0,
+
+    /** 自定义执行命令，为空时使用默认脚本路径 */
+    var customCommand: String? = null,
+
+    /** 是否启用（参与构建） */
+    var enabled: Boolean = true
 ) {
+    /**
+     * 获取实际执行的命令
+     * 如果设置了自定义命令则使用自定义命令，否则使用脚本路径
+     */
+    fun getEffectiveCommand(): String =
+        customCommand?.takeIf { it.isNotBlank() } ?: scriptPath
     companion object {
         /**
          * 根据脚本路径创建 BuildModule
@@ -33,6 +45,19 @@ data class BuildModule(
                 name = name,
                 scriptPath = scriptPath,
                 workingDir = workingDir
+            )
+        }
+
+        /**
+         * 根据目录路径创建 BuildModule
+         */
+        fun fromDirectory(dirPath: String): BuildModule {
+            val dir = java.io.File(dirPath)
+            return BuildModule(
+                id = dirPath.hashCode().toString(),
+                name = dir.name,
+                scriptPath = "", // 无脚本，需自定义命令
+                workingDir = dirPath
             )
         }
     }

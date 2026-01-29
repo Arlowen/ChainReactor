@@ -37,6 +37,7 @@ class ScriptRunner {
      * 同步执行脚本
      * @param scriptPath 脚本完整路径
      * @param workingDir 工作目录
+     * @param customCommand 自定义执行命令，为空时使用 scriptPath
      * @param timeoutSeconds 超时时间（秒）
      * @param consoleView 可选的控制台视图，用于实时输出
      * @return 执行结果
@@ -44,10 +45,12 @@ class ScriptRunner {
     fun runScript(
         scriptPath: String,
         workingDir: String,
+        customCommand: String? = null,
         timeoutSeconds: Long = 300,
         consoleView: ConsoleView? = null
     ): ScriptResult {
-        LOG.info("开始执行脚本: $scriptPath, 工作目录: $workingDir")
+        val commandToRun = customCommand?.takeIf { it.isNotBlank() } ?: scriptPath
+        LOG.info("开始执行命令: $commandToRun, 工作目录: $workingDir")
 
         val scriptFile = File(scriptPath)
         if (!scriptFile.exists()) {
@@ -71,7 +74,7 @@ class ScriptRunner {
             // 构建命令行
             val commandLine = GeneralCommandLine()
                 .withExePath("/bin/bash")
-                .withParameters("-c", scriptPath)
+                .withParameters("-c", commandToRun)
                 .withWorkDirectory(workingDir)
                 .withEnvironment(System.getenv())
 
@@ -105,7 +108,7 @@ class ScriptRunner {
             })
 
             // 开始执行
-            consoleView?.print("▶ 执行: $scriptPath\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+            consoleView?.print("▶ 执行: $commandToRun\n", ConsoleViewContentType.SYSTEM_OUTPUT)
             consoleView?.print("📁 工作目录: $workingDir\n", ConsoleViewContentType.SYSTEM_OUTPUT)
             consoleView?.print("─".repeat(50) + "\n", ConsoleViewContentType.SYSTEM_OUTPUT)
 

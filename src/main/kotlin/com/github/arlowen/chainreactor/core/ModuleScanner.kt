@@ -1,17 +1,14 @@
 package com.github.arlowen.chainreactor.core
 
 import com.github.arlowen.chainreactor.model.BuildModule
-import com.github.arlowen.chainreactor.settings.ChainReactorSettings
-import com.intellij.openapi.application.ReadAction
+import com.github.arlowen.chainreactor.state.ModuleOrderState
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.search.FilenameIndex
-import com.intellij.psi.search.GlobalSearchScope
+import java.io.File
 
 /**
  * 模块扫描器
- * 使用 FilenameIndex 扫描项目中的脚本文件
+ * 扫描项目目录构建模块
  */
 class ModuleScanner(private val project: Project) {
 
@@ -21,49 +18,50 @@ class ModuleScanner(private val project: Project) {
 
     /**
      * 扫描项目中的构建模块
-     * @param scriptName 要扫描的脚本文件名（如果为空则使用设置中的值）
-     * @return 扫描到的模块列表
+     * 1. 扫描项目根目录下的子模块
+     * 2. 合并手动添加的模块
+     * 3. 过滤已移除的模块
      */
-    fun scan(scriptName: String? = null): List<BuildModule> {
-        val targetScriptName = scriptName ?: ChainReactorSettings.getInstance().scriptName
-
-        LOG.info("开始扫描项目中的 '$targetScriptName' 文件...")
-
+    fun scan(): List<BuildModule> {
+        val state = ModuleOrderState.getInstance(project)
         val modules = mutableListOf<BuildModule>()
-
-        try {
-            // 使用 ReadAction 执行索引查询
-            val virtualFiles = ReadAction.compute<Collection<VirtualFile>, Throwable> {
-                FilenameIndex.getVirtualFilesByName(
-                    targetScriptName,
-                    GlobalSearchScope.projectScope(project)
-                )
+        
+        // 1. 扫描项目目录
+        val projectBasePath = project.basePath
+        if (projectBasePath != null) {
+            val rootDir = File(projectBasePath)
+            val subDirs = rootDir.listFiles()?.filter { it.isDirectory && isProjectDirectory(it) } ?: emptyList()
+            
+            subDirs.forEach { dir ->
+                val module = BuildModule.fromDirectory(dir.absolutePath)
+                if (!state.isRemoved(module.id)) {
+                    modules.add(module)
+                }
             }
-
-            LOG.info("找到 ${virtualFiles.size} 个 '$targetScriptName' 文件")
-
-            virtualFiles.forEachIndexed { index, virtualFile ->
-                val module = BuildModule(
-                    id = virtualFile.path.hashCode().toString(),
-                    name = virtualFile.parent?.name ?: virtualFile.name,
-                    scriptPath = virtualFile.path,
-                    workingDir = virtualFile.parent?.path ?: "",
-                    order = index
-                )
-                modules.add(module)
-                LOG.info("  发现模块: ${module.name} -> ${module.scriptPath}")
-            }
-
-        } catch (e: Exception) {
-            LOG.error("扫描模块时发生错误", e)
         }
-
+        
+        // 2. 添加手动项目
+        state.getManualProjects().forEach { path ->
+            val dir = File(path)
+            if (dir.exists() && dir.isDirectory) {
+                // 避免重复添加 (已扫描到的)
+                if (modules.none { it.workingDir == path }) {
+                     val module = BuildModule.fromDirectory(path)
+                     if (!state.isRemoved(module.id)) {
+                         modules.add(module)
+                     }
+                }
+            }
+        }
+        
         LOG.info("扫描完成，共找到 ${modules.size} 个模块")
         return modules.sortedBy { it.name }
     }
 
-    /**
-     * 刷新扫描（重新扫描并返回结果）
-     */
-    fun refresh(): List<BuildModule> = scan()
+    private fun isProjectDirectory(dir: File): Boolean {
+        // 判断是否为项目目录：包含构建文件
+        return dir.resolve("pom.xml").exists() || 
+               dir.resolve("build.gradle").exists() || 
+               dir.resolve("build.gradle.kts").exists()
+    }
 }

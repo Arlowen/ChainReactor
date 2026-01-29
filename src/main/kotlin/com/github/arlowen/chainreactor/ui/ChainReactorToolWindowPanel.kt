@@ -26,11 +26,15 @@ import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.util.ui.JBUI
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.awt.BorderLayout
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import javax.swing.DropMode
@@ -70,6 +74,26 @@ class ChainReactorToolWindowPanel(private val project: Project) : SimpleToolWind
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             emptyText.text = "未找到构建模块"
             emptyText.appendSecondaryText("点击刷新按钮扫描项目", SimpleTextAttributes.GRAYED_ATTRIBUTES, null)
+
+            // 鼠标点击处理
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    if (pipelineExecutor.isRunning()) return
+                    
+                    val index = locationToIndex(e.point)
+                    if (index < 0) return
+                    
+                    val cellBounds = getCellBounds(index, index) ?: return
+                    val relativeX = e.x - cellBounds.x
+                    
+                    // 第一个 50px 区域是复选框区域
+                    if (relativeX < 50 && e.clickCount == 1) {
+                        toggleModuleEnabled(index)
+                    } else if (e.clickCount == 2) {
+                        editSelectedModuleCommand()
+                    }
+                }
+            })
         }
 
         // 启用拖拽排序
@@ -191,6 +215,26 @@ class ChainReactorToolWindowPanel(private val project: Project) : SimpleToolWind
                     consoleView.clear()
                 }
             })
+
+            addSeparator()
+            
+            // 添加项目按钮
+            add(object : AnAction("添加项目", "添加现有项目目录", AllIcons.General.Add) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    addProject()
+                }
+            })
+            
+            // 移除项目按钮
+            add(object : AnAction("移除项目", "从列表中移除选中项目", AllIcons.General.Remove) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    removeSelectedProject()
+                }
+                
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = !pipelineExecutor.isRunning() && !moduleList.isSelectionEmpty
+                }
+            })
         }
 
         return ActionManager.getInstance()
@@ -250,13 +294,22 @@ class ChainReactorToolWindowPanel(private val project: Project) : SimpleToolWind
         LOG.info("刷新模块列表")
 
         ApplicationManager.getApplication().executeOnPooledThread {
+            // ModuleScanner.scan() 现在会自动合并手动项目并过滤移除项目
             val modules = moduleScanner.scan()
 
             ApplicationManager.getApplication().invokeLater {
+                val orderState = ModuleOrderState.getInstance(project)
+                
+                // 加载每个模块的自定义命令和启用状态
+                modules.forEach { module ->
+                    module.customCommand = orderState.getCommand(module.id)
+                    module.enabled = orderState.isEnabled(module.id)
+                }
+                
                 listModel.setModules(modules)
 
                 // 应用保存的顺序
-                val savedOrder = ModuleOrderState.getInstance(project).getOrder()
+                val savedOrder = orderState.getOrder()
                 if (savedOrder.isNotEmpty()) {
                     listModel.applyOrder(savedOrder)
                 }
@@ -265,8 +318,89 @@ class ChainReactorToolWindowPanel(private val project: Project) : SimpleToolWind
                 cellRenderer.resetAllStatus()
                 moduleList.repaint()
 
-                consoleView.print("✅ 扫描完成，找到 ${modules.size} 个模块\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+                val enabledCount = modules.count { it.enabled }
+                consoleView.print("✅ 刷新完成，当前共有 ${modules.size} 个模块\n", ConsoleViewContentType.SYSTEM_OUTPUT)
             }
+        }
+    }
+
+    /**
+     * 添加项目
+     */
+    private fun addProject() {
+        val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
+            .withTitle("选择项目目录")
+            .withDescription("选择包含 pom.xml 或 build.gradle 的目录")
+            
+        val virtualFile = FileChooser.chooseFile(descriptor, project, null)
+        if (virtualFile != null) {
+            val path = virtualFile.path
+            ModuleOrderState.getInstance(project).addManualProject(path)
+            refreshModules()
+            consoleView.print("➕ 已添加项目: ${virtualFile.name}\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+        }
+    }
+
+    /**
+     * 移除选中的项目
+     */
+    private fun removeSelectedProject() {
+        val module = moduleList.selectedValue ?: return
+        val result = Messages.showYesNoDialog(
+            project,
+            "确定要从列表中移除 '${module.name}' 吗？\n(这不会删除物理文件)",
+            "移除项目",
+            Messages.getQuestionIcon()
+        )
+        
+        if (result == Messages.YES) {
+            ModuleOrderState.getInstance(project).removeProject(module.id)
+            refreshModules()
+            consoleView.print("➖ 已移除项目: ${module.name}\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+        }
+    }
+
+    /**
+     * 切换模块启用状态
+     */
+    private fun toggleModuleEnabled(index: Int) {
+        val module = listModel.getElementAt(index) ?: return
+        module.enabled = !module.enabled
+        ModuleOrderState.getInstance(project).setEnabled(module.id, module.enabled)
+        moduleList.repaint()
+        
+        val status = if (module.enabled) "✅ 已启用" else "⚪ 已禁用"
+        consoleView.print("$status: ${module.name}\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+    }
+
+    /**
+     * 编辑选中模块的命令
+     */
+    private fun editSelectedModuleCommand() {
+        val module = moduleList.selectedValue ?: return
+        val currentCommand = module.customCommand ?: ""
+        
+        val newCommand = Messages.showInputDialog(
+            project,
+            "输入自定义命令 (留空使用默认脚本):\n\n默认: ${module.scriptPath}",
+            "编辑执行命令 - ${module.name}",
+            null,
+            currentCommand,
+            null
+        )
+        
+        // 用户点击取消时 newCommand 为 null
+        if (newCommand != null) {
+            module.customCommand = newCommand.takeIf { it.isNotBlank() }
+            ModuleOrderState.getInstance(project).setCommand(module.id, module.customCommand)
+            moduleList.repaint()
+            
+            val msg = if (module.customCommand != null) {
+                "✏️ 已设置 ${module.name} 的自定义命令: ${module.customCommand}\n"
+            } else {
+                "🔄 已重置 ${module.name} 为默认命令\n"
+            }
+            consoleView.print(msg, ConsoleViewContentType.SYSTEM_OUTPUT)
         }
     }
 
@@ -282,25 +416,28 @@ class ChainReactorToolWindowPanel(private val project: Project) : SimpleToolWind
      * 运行构建流水线
      */
     private fun runPipeline() {
-        if (listModel.size() == 0) {
-            Messages.showWarningDialog(project, "没有可执行的构建模块", "ChainReactor")
+        val allModules = listModel.getModules()
+        val enabledModules = allModules.filter { it.enabled }
+        
+        if (enabledModules.isEmpty()) {
+            Messages.showWarningDialog(project, "没有勾选任何构建模块", "ChainReactor")
             return
         }
 
-        val modules = listModel.getModules()
-
         // 重置状态
         cellRenderer.resetAllStatus()
-        modules.forEach { cellRenderer.updateStatus(it.id, ModuleStatus.PENDING) }
+        enabledModules.forEach { cellRenderer.updateStatus(it.id, ModuleStatus.PENDING) }
+        // 禁用的模块标记为 SKIPPED
+        allModules.filter { !it.enabled }.forEach { cellRenderer.updateStatus(it.id, ModuleStatus.SKIPPED) }
         moduleList.repaint()
 
         // 清空控制台
         consoleView.clear()
-        consoleView.print("🚀 开始构建流水线...\n", ConsoleViewContentType.SYSTEM_OUTPUT)
+        consoleView.print("🚀 开始构建流水线 (共 ${enabledModules.size}/${allModules.size} 个模块)...\n", ConsoleViewContentType.SYSTEM_OUTPUT)
         consoleView.print("═".repeat(50) + "\n\n", ConsoleViewContentType.SYSTEM_OUTPUT)
 
         coroutineScope.launch {
-            pipelineExecutor.execute(modules, consoleView, object : PipelineExecutor.StatusListener {
+            pipelineExecutor.execute(enabledModules, consoleView, object : PipelineExecutor.StatusListener {
                 override fun onStatusChanged(moduleId: String, status: ModuleStatus) {
                     ApplicationManager.getApplication().invokeLater {
                         cellRenderer.updateStatus(moduleId, status)

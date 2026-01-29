@@ -31,8 +31,8 @@ repositories {
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
-    implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.swing)
+    compileOnly(libs.kotlinx.coroutines.core)
+    compileOnly(libs.kotlinx.coroutines.swing)
 
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)

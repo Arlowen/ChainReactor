@@ -82,6 +82,7 @@ class PipelineExecutor(private val project: Project) {
                 scriptRunner.runScript(
                     scriptPath = module.scriptPath,
                     workingDir = module.workingDir,
+                    customCommand = module.customCommand,
                     timeoutSeconds = settings.timeoutSeconds,
                     consoleView = consoleView
                 )
