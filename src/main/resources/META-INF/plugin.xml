@@ -13,7 +13,7 @@
         <toolWindow
             id="ChainReactor"
             anchor="right"
-            icon="AllIcons.Actions.Execute"
+            icon="icons/chainreactorToolWindow.svg"
             factoryClass="com.github.arlowen.chainreactor.toolWindow.ChainReactorToolWindowFactory"/>
 
         <!-- Settings -->

@@ -23,6 +23,9 @@ class ScriptRunner {
         private val LOG = thisLogger()
     }
 
+    @Volatile
+    private var currentProcessHandler: OSProcessHandler? = null
+
     /**
      * 脚本执行结果
      */
@@ -49,21 +52,47 @@ class ScriptRunner {
         timeoutSeconds: Long = 300,
         consoleView: ConsoleView? = null
     ): ScriptResult {
-        val commandToRun = customCommand?.takeIf { it.isNotBlank() } ?: scriptPath
-        LOG.info("开始执行命令: $commandToRun, 工作目录: $workingDir")
-
-        val scriptFile = File(scriptPath)
-        if (!scriptFile.exists()) {
-            val errorMsg = "脚本文件不存在: $scriptPath"
+        val workingDirFile = File(workingDir)
+        if (!workingDirFile.exists() || !workingDirFile.isDirectory) {
+            val errorMsg = "工作目录不存在或不可用: $workingDir"
             LOG.error(errorMsg)
             consoleView?.print("❌ $errorMsg\n", ConsoleViewContentType.ERROR_OUTPUT)
             return ScriptResult(-1, "", errorMsg, false)
         }
 
-        // 确保脚本有执行权限
-        if (!scriptFile.canExecute()) {
-            scriptFile.setExecutable(true)
+        val hasCustomCommand = !customCommand.isNullOrBlank()
+        if (!hasCustomCommand && scriptPath.isBlank()) {
+            val errorMsg = "未配置可执行脚本或命令"
+            LOG.error(errorMsg)
+            consoleView?.print("❌ $errorMsg\n", ConsoleViewContentType.ERROR_OUTPUT)
+            return ScriptResult(-1, "", errorMsg, false)
         }
+
+        val resolvedScriptPath = if (!hasCustomCommand) {
+            val scriptFile = File(scriptPath)
+            val resolvedFile = if (scriptFile.isAbsolute) {
+                scriptFile
+            } else {
+                File(workingDirFile, scriptPath)
+            }
+
+            if (!resolvedFile.exists()) {
+                val errorMsg = "脚本文件不存在: ${resolvedFile.absolutePath}"
+                LOG.error(errorMsg)
+                consoleView?.print("❌ $errorMsg\n", ConsoleViewContentType.ERROR_OUTPUT)
+                return ScriptResult(-1, "", errorMsg, false)
+            }
+
+            if (!resolvedFile.canExecute()) {
+                resolvedFile.setExecutable(true)
+            }
+            resolvedFile.absolutePath
+        } else {
+            null
+        }
+
+        val commandToRun = customCommand?.takeIf { it.isNotBlank() } ?: resolvedScriptPath.orEmpty()
+        LOG.info("开始执行命令: $commandToRun, 工作目录: $workingDir")
 
         val stdout = StringBuilder()
         val stderr = StringBuilder()
@@ -80,6 +109,7 @@ class ScriptRunner {
 
             // 创建进程处理器
             val processHandler = OSProcessHandler(commandLine)
+            currentProcessHandler = processHandler
 
             // 添加进程监听器
             processHandler.addProcessListener(object : ProcessAdapter() {
@@ -103,6 +133,7 @@ class ScriptRunner {
                 override fun processTerminated(event: ProcessEvent) {
                     exitCode = event.exitCode
                     LOG.info("脚本执行完成: $scriptPath, 退出码: $exitCode")
+                    currentProcessHandler = null
                     latch.countDown()
                 }
             })
@@ -118,6 +149,7 @@ class ScriptRunner {
             val completed = latch.await(timeoutSeconds, TimeUnit.SECONDS)
             if (!completed) {
                 processHandler.destroyProcess()
+                currentProcessHandler = null
                 val errorMsg = "脚本执行超时 (${timeoutSeconds}s): $scriptPath"
                 LOG.warn(errorMsg)
                 consoleView?.print("\n⏱ $errorMsg\n", ConsoleViewContentType.ERROR_OUTPUT)
@@ -138,7 +170,20 @@ class ScriptRunner {
             val errorMsg = "脚本执行异常: ${e.message}"
             LOG.error(errorMsg, e)
             consoleView?.print("❌ $errorMsg\n", ConsoleViewContentType.ERROR_OUTPUT)
+            currentProcessHandler?.destroyProcess()
+            currentProcessHandler = null
             return ScriptResult(-1, stdout.toString(), errorMsg, false)
+        }
+    }
+
+    /**
+     * 尝试停止当前正在执行的脚本
+     */
+    fun stopRunning() {
+        val handler = currentProcessHandler
+        if (handler != null) {
+            LOG.info("停止当前脚本执行")
+            handler.destroyProcess()
         }
     }
 

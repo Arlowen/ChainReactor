@@ -56,7 +56,7 @@ data class BuildModule(
             return BuildModule(
                 id = dirPath.hashCode().toString(),
                 name = dir.name,
-                scriptPath = "", // 无脚本，需自定义命令
+                scriptPath = "./all_build.sh", // 默认脚本
                 workingDir = dirPath
             )
         }

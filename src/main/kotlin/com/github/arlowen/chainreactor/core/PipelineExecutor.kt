@@ -20,8 +20,8 @@ class PipelineExecutor(private val project: Project) {
     }
 
     private val scriptRunner = ScriptRunner()
-    private var isRunning = false
-    private var shouldStop = false
+    @Volatile private var isRunning = false
+    @Volatile private var shouldStop = false
 
     /**
      * 状态变更监听器
@@ -119,6 +119,7 @@ class PipelineExecutor(private val project: Project) {
     fun stop() {
         LOG.info("请求停止流水线")
         shouldStop = true
+        scriptRunner.stopRunning()
     }
 
     /**

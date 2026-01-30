@@ -9,7 +9,7 @@ import com.intellij.openapi.project.Project
 
 /**
  * 模块顺序持久化状态
- * 保存用户拖拽排序后的模块顺序
+ * 保存用户拖拽排序后的模块顺序及流水线配置 (Profiles)
  */
 @Service(Service.Level.PROJECT)
 @State(
@@ -17,6 +17,16 @@ import com.intellij.openapi.project.Project
     storages = [Storage(StoragePathMacros.WORKSPACE_FILE)]
 )
 class ModuleOrderState : PersistentStateComponent<ModuleOrderState.State> {
+
+    /**
+     * 流水线配置 (Profile)
+     */
+    data class PipelineProfile(
+        var name: String = "",
+        var moduleOrder: MutableList<String> = mutableListOf(),
+        var disabledModules: MutableSet<String> = mutableSetOf(),
+        var moduleCommands: MutableMap<String, String> = mutableMapOf()
+    )
 
 /**
      * 状态数据类
@@ -31,7 +41,9 @@ class ModuleOrderState : PersistentStateComponent<ModuleOrderState.State> {
         /** 手动添加的项目路径集合 */
         var manualProjects: MutableSet<String> = mutableSetOf(),
         /** 已移除的项目 ID 集合 */
-        var removedProjects: MutableSet<String> = mutableSetOf()
+        var removedProjects: MutableSet<String> = mutableSetOf(),
+        /** 保存的流水线配置 (Profile Name -> Profile) */
+        var savedProfiles: MutableMap<String, PipelineProfile> = mutableMapOf()
     )
 
     private var myState = State()
@@ -147,6 +159,57 @@ class ModuleOrderState : PersistentStateComponent<ModuleOrderState.State> {
      */
     fun resetRemovedProjects() {
         myState.removedProjects.clear()
+    }
+
+    /**
+     * 保存当前状态为 Profile
+     */
+    fun saveProfile(name: String) {
+        val profile = PipelineProfile(
+            name = name,
+            moduleOrder = myState.moduleOrder.toMutableList(),
+            disabledModules = myState.disabledModules.toMutableSet(),
+            moduleCommands = myState.moduleCommands.toMutableMap()
+        )
+        myState.savedProfiles[name] = profile
+    }
+
+    /**
+     * 保存/更新指定 Profile
+     */
+    fun upsertProfile(profile: PipelineProfile, oldName: String? = null) {
+        if (!oldName.isNullOrBlank() && oldName != profile.name) {
+            myState.savedProfiles.remove(oldName)
+        }
+        myState.savedProfiles[profile.name] = profile
+    }
+
+    /**
+     * 获取指定 Profile
+     */
+    fun getProfile(name: String): PipelineProfile? = myState.savedProfiles[name]
+
+    /**
+     * 获取所有 Profile 名称
+     */
+    fun getProfileNames(): List<String> = myState.savedProfiles.keys.sorted()
+
+    /**
+     * 删除 Profile
+     */
+    fun deleteProfile(name: String) {
+        myState.savedProfiles.remove(name)
+    }
+
+    /**
+     * 应用 Profile 到当前状态
+     */
+    fun applyProfile(profile: PipelineProfile) {
+        myState.moduleOrder = profile.moduleOrder.toMutableList()
+        myState.disabledModules = profile.disabledModules.toMutableSet()
+        // 合并命令，或者覆盖？通常 Profile 包含了完整的命令配置，应该覆盖当前上下文中的相关命令
+        // 但为了不覆盖其他可能有用的命令，我们只覆盖 profile 中存在的
+        myState.moduleCommands.putAll(profile.moduleCommands)
     }
 
     companion object {

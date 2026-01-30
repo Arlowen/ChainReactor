@@ -62,6 +62,8 @@ class ModuleScanner(private val project: Project) {
         // 判断是否为项目目录：包含构建文件
         return dir.resolve("pom.xml").exists() || 
                dir.resolve("build.gradle").exists() || 
-               dir.resolve("build.gradle.kts").exists()
+               dir.resolve("build.gradle.kts").exists() ||
+               dir.resolve("settings.gradle").exists() ||
+               dir.resolve("settings.gradle.kts").exists()
     }
 }
