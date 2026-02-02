@@ -1,52 +1,94 @@
 # ChainReactor
 
 ![Build](https://github.com/Arlowen/ChainReactor/workflows/Build/badge.svg)
-[![Version](https://img.shields.io/jetbrains/plugin/v/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
 
-## Template ToDo list
-- [x] Create a new [IntelliJ Platform Plugin Template][template] project.
-- [ ] Get familiar with the [template documentation][template].
-- [ ] Adjust the [pluginGroup](./gradle.properties) and [pluginName](./gradle.properties), as well as the [id](./src/main/resources/META-INF/plugin.xml) and [sources package](./src/main/kotlin).
-- [ ] Adjust the plugin description in `README` (see [Tips][docs:plugin-description])
-- [ ] Review the [Legal Agreements](https://plugins.jetbrains.com/docs/marketplace/legal-agreements.html?from=IJPluginTemplate).
-- [ ] [Publish a plugin manually](https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html?from=IJPluginTemplate) for the first time.
-- [ ] Set the `MARKETPLACE_ID` in the above README badges. You can obtain it once the plugin is published to JetBrains Marketplace.
-- [ ] Set the [Plugin Signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html?from=IJPluginTemplate) related [secrets](https://github.com/JetBrains/intellij-platform-plugin-template#environment-variables).
-- [ ] Set the [Deployment Token](https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html?from=IJPluginTemplate).
-- [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
-- [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
+ChainReactor 是一个 IntelliJ IDEA 工具窗插件，用于将多个子项目的构建脚本串联成“流水线”，按顺序执行并输出统一日志。
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
+ChainReactor 是一款用于多模块构建串行执行的 IntelliJ IDEA 插件。它会扫描项目根目录下的子模块，并以“流水线”的方式按顺序执行脚本，提供可视化状态、统一日志和可复用的 Profile。
 
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
-
-To keep everything working, do not remove `<!-- ... -->` sections. 
+主要特性：
+- 自动扫描 Maven/Gradle 子模块
+- 拖拽排序、启用/禁用模块、单模块自定义命令
+- 串行执行流水线，实时日志与执行状态
+- Profile 保存/编辑/运行/停止
+- 执行超时与失败继续策略
 <!-- Plugin description end -->
 
-## Installation
+## 功能概览
+- **模块扫描**：扫描项目根目录下包含 `pom.xml` / `build.gradle` / `build.gradle.kts` / `settings.gradle` / `settings.gradle.kts` 的子目录。
+- **构建流水线**：按列表顺序串行执行，支持停止与失败处理策略。
+- **Profile**：保存当前流水线配置（顺序、禁用项、自定义命令），支持编辑与一键运行。
+- **日志与状态**：每个模块有状态图标，控制台实时输出。
+- **手动添加项目**：可添加不在根目录下的外部项目目录。
 
-- Using the IDE built-in plugin system:
+## 兼容性
+- IntelliJ IDEA **2024.2+**（since build: `242`）
 
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > <kbd>Search for "ChainReactor"</kbd> >
-  <kbd>Install</kbd>
+## 安装
+### 本地安装（推荐用于当前仓库）
+1. 构建插件：
+   ```bash
+   ./gradlew buildPlugin
+   ```
+2. 在 IDE 中安装：
+   `Settings/Preferences → Plugins → ⚙️ → Install Plugin from Disk...`
+3. 选择生成的 zip：
+   `build/distributions/*.zip`
 
-- Using JetBrains Marketplace:
+### Marketplace
+当前仓库未配置 Marketplace ID，若后续发布，可补充此部分。
 
-  Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID) and install it by clicking the <kbd>Install to ...</kbd> button in case your IDE is running.
+## 使用说明
+### 打开工具窗
+- `View → Tool Windows → ChainReactor`（工具窗位于右侧）
 
-  You can also download the [latest release](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID/versions) from JetBrains Marketplace and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+### 扫描模块
+- 点击工具栏的 **刷新** 按钮扫描项目。
+- 若未识别到模块，确认子目录中存在 Maven/Gradle 构建文件。
 
-- Manually:
+### 模块列表操作
+- **拖拽**调整执行顺序。
+- **单击左侧复选框**启用/禁用模块。
+- **双击模块**编辑自定义命令。
+- **移除项目**可从列表中移除模块（不会删除物理文件）。
 
-  Download the [latest release](https://github.com/Arlowen/ChainReactor/releases/latest) and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+### 运行流水线
+- 点击 **运行** 按钮开始执行。
+- 点击 **停止** 会终止当前脚本并跳过后续模块。
 
+### Profile 管理
+- 点击 **保存** 将当前列表保存为 Profile。
+- Profile 列表支持：运行/停止/编辑/删除。
+- Profile 运行会创建独立日志 Tab，不影响当前列表。
 
----
-Plugin based on the [IntelliJ Platform Plugin Template][template].
+### 运行单个脚本
+- `Tools → 运行脚本...` 选择任意 Shell 脚本执行，输出在独立控制台窗口。
 
-[template]: https://github.com/JetBrains/intellij-platform-plugin-template
-[docs:plugin-description]: https://plugins.jetbrains.com/docs/intellij/plugin-user-experience.html#plugin-description-and-presentation
+## 脚本约定
+- 默认执行命令为模块目录中的 `./all_build.sh`。
+- 若脚本不存在，可为模块设置**自定义命令**替代。
+- 脚本通过 `/bin/bash -c` 执行，请确保脚本可执行权限。
+
+## 配置
+`Settings/Preferences → Tools → ChainReactor`
+- **执行超时（秒）**：单个脚本最大执行时间，默认 300 秒。
+- **失败时继续执行**：开启后，某模块失败仍继续后续模块。
+- **脚本文件名**：当前版本仍以 `./all_build.sh` 作为默认执行入口，建议通过自定义命令精确控制。
+
+## 开发与调试
+```bash
+# 启动 IDE（运行插件）
+./gradlew runIde
+
+# 运行测试
+./gradlew test
+
+# 构建插件包
+./gradlew buildPlugin
+```
+
+## 常见问题
+- **未发现模块**：确认子目录包含 Maven/Gradle 构建文件；或使用“添加项目”手动添加路径。
+- **脚本执行失败**：检查脚本是否存在、是否有可执行权限，以及工作目录是否正确。
+- **停止无效**：插件会销毁当前进程，长时间运行的子进程可能需要脚本自行处理退出。
